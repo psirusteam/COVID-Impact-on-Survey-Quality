@@ -22,17 +22,35 @@ library(tidyverse)
 library(readr)
 library(vcd)
 library(DescTools)
+library(magrittr)
 
 # Reading data ------------------------------------------------------------
 
 HLPS_hh_roster <- read.csv("Data/hh_mod_b_19.csv")
 HLPS_hh_edu <- read.csv("Data/hh_mod_c_19.csv")
+HLPS_hh_eco <- read.csv("Data/hh_mod_e_19.csv")
+IHPS_hh_filter <- read.csv("Data/hh_mod_a_filt_19.csv")
+HLPS_hh_support <- read.csv("Data/hh_mod_r_19.csv") %>% 
+  filter(hh_r0a == 111)
 
-############################### Cramer ####################################################
-
-HLPS <- HLPS_hh_roster %>%
+HLPS <- HLPS_hh_roster %>% 
   inner_join(HLPS_hh_edu) %>%
-  select(y4_hhid, id_code, hh_b04, hh_b06_4, hh_c05_1)
+  inner_join(HLPS_hh_eco) %>%
+  inner_join(IHPS_hh_filter) %>%
+  inner_join(HLPS_hh_support) %>% 
+  select(y4_hhid,
+       id_code,
+       hh_b04,
+       hh_b06_4,
+       hh_c05_1,
+       hh_e06_8a,
+       hh_wgt,
+       hh_r01) %>% 
+  drop_na()
+
+
+# Cramer test -------------------------------------------------------------
+
 
 # Identifying if the hh has a working phone
 hh_phone <-
@@ -43,7 +61,7 @@ hh_phone <-
 # Identifying hh heads
 head_edu <- HLPS %>% filter(hh_b04 == 1)
 
-temp1 <- head_edu %>%
+temp <- head_edu %>%
   inner_join(hh_phone) %>%
   drop_na() %>%
   mutate(
@@ -55,134 +73,43 @@ temp1 <- head_edu %>%
                 TRUE ~ "Illiterate"),
   )
 
-crosstable <- table(temp1$Phone, temp1$Literacy)
-
+crosstable <- table(temp$Phone, temp$Literacy)
+crosstable
 assocstats(crosstable)
 CramerV(crosstable,
         conf.level = 0.95)
 
-#################################################
-## Logistic regression for bias assessment;
-# same model used for propensity score
-################################################
 
-# load the economic characteristics data
-HLPS_hh_eco <- read.csv("Data/hh_mod_e_19.csv")
-
-HLPS <- HLPS_hh_eco %>%
-  inner_join(HLPS) %>%
-  select(y4_hhid, id_code, hh_b04, hh_b06_4, hh_c05_1, hh_e06_8a)
-
-head_eco <- HLPS %>%
-  filter(hh_b04 == 1)
-
-temp2 <- head_eco %>%
-  inner_join(temp1) %>%
-  drop_na()
+# Propensity score model --------------------------------------------------
 
 # logistic regression
 ps_fit <- glm(
   formula = factor(Phone) ~ factor(hh_c05_1) + factor(hh_e06_8a),
-  family = binomial,
-  data = temp2
+  family = binomial(link = "logit"),
+  data = temp
 )
 
 summary(ps_fit)
-temp2$ps <- predict(ps_fit, type = "response")
-sum(temp2$ps)
-table(temp2$Phone)
-
-##############################################
-# Class variable weighting
-##############################################
-IHPS_hh_filter <- read.csv("hh_mod_a_filt_19.csv")
-HLPS_m3 <-
-  merge(sub_m2,
-        IHPS_hh_filter,
-        by.x = "y4_hhid",
-        by.y = "y4_hhid",
-        all = TRUE)
-sub_m3 <-
-  select(HLPS_m3,
-         y4_hhid,
-         id_code,
-         hh_b04,
-         hh_b06_4,
-         hh_c05_1,
-         hh_e06_8a,
-         hh_wgt)
-head_m3 <- filter(sub_m3, hh_b04 == 1)
-Count <-
-  head_m3 %>% group_by (hh_c05_1, hh_e06_8a, hh_b06_4) %>% summarise(n =
-                                                                       n(), tt_wgt = sum(hh_wgt))
-
-write.xlsx(Count, "nonresponse weight.xlsx")
-write.xlsx(head_m3, "nonresponse weight2.xlsx")
+temp$ps <- predict(ps_fit, type = "response")
+sum(temp$ps)
+table(temp$Phone)
 
 
-##################################################
-# propensity score model fitting, logistic regression
-###################################################
-all31 <- all3 %>%
-  mutate (
-    Prob = case_when(
-      hh_c05_1 == 1 & hh_e06_8a == 1 ~ exp(2.056) / (1 + exp(2.056)),
-      hh_c05_1 == 1 &
-        hh_e06_8a == 2 ~ exp(2.056 - 0.651) / (1 + exp(2.056 - 0.651)),
-      hh_c05_1 == 1 &
-        hh_e06_8a == 3 ~ exp(2.056 - 1.711) / (1 + exp(2.056 - 1.711)),
-      hh_c05_1 == 1 &
-        hh_e06_8a == 4 ~ exp(2.056 + 11.51) / (1 + exp(2.056 + 11.51)),
-      hh_c05_1 == 1 &
-        hh_e06_8a == 5 ~ exp(2.056 - 1.859) / (1 + exp(2.056 - 1.859)),
-      hh_c05_1 == 2 &
-        hh_e06_8a == 1 ~ exp(2.056 - 1.39) / (1 + exp(2.056 - 1.39)),
-      hh_c05_1 == 2 &
-        hh_e06_8a == 2 ~ exp(2.056 - 1.39 - 0.651) / (1 + exp(2.056 - 1.39 - 0.651)),
-      hh_c05_1 == 2 &
-        hh_e06_8a == 3 ~ exp(2.056 - 1.39 - 1.711) / (1 + exp(2.056 - 1.39 - 1.711)),
-      hh_c05_1 == 2 &
-        hh_e06_8a == 4 ~ exp(2.056 - 1.39 + 11.51) / (1 + exp(2.056 - 1.39 + 11.51)),
-      hh_c05_1 == 2 &
-        hh_e06_8a == 5 ~ exp(2.056 - 1.39 - 1.859) / (1 + exp(2.056 - 1.39 - 1.859)),
-    )
-  )
-
-all31$ps <- predict(all4, type = "response", newdata  = all31)
-
-summary(all31$hh_c05_1)
-summary(all31$hh_e06_8a)
-summary(all31$ps)
+# Class variable weighting ------------------------------------------------
 
 
-head(all31)
 
-write.xlsx(all31, "propensity.xlsx")
+temp_agg <- temp %>%
+  group_by (hh_c05_1, hh_e06_8a, hh_b06_4) %>%
+  summarise(n = n(), 
+            tt_wgt = sum(hh_wgt))
+
+temp_agg$ps <- predict(ps_fit, type = "response", newdata  = temp_agg)
+table(temp_agg$ps)
 
 #####################################################################
 # propensity score model fitting, adding new variables logistic regression
 ######################################################################
-
-HLPS_hh_support <- read.csv('hh_mod_r_19.csv')
-HLPS_m4 <-
-  merge(
-    sub_m3,
-    HLPS_hh_support,
-    by.x = "y4_hhid",
-    by.y = "y4_hhid",
-    all = TRUE
-  )
-sub_m4 <- filter(HLPS_m4, hh_r0a == 111)
-sub_m41 <-
-  select(sub_m4,
-         y4_hhid,
-         id_code,
-         hh_b04,
-         hh_b06_4,
-         hh_c05_1,
-         hh_e06_8a,
-         hh_wgt,
-         hh_r01)
 
 
 #####################################################################
