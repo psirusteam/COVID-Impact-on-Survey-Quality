@@ -61,7 +61,7 @@ hh_phone <-
 # Identifying hh heads
 head_edu <- HLPS %>% filter(hh_b04 == 1)
 
-temp <- head_edu %>%
+hh_temp <- head_edu %>%
   inner_join(hh_phone) %>%
   drop_na() %>%
   mutate(
@@ -73,12 +73,11 @@ temp <- head_edu %>%
                 TRUE ~ "Illiterate"),
   )
 
-crosstable <- table(temp$Phone, temp$Literacy)
+crosstable <- table(hh_temp$Phone, hh_temp$Literacy)
 crosstable
 assocstats(crosstable)
 CramerV(crosstable,
         conf.level = 0.95)
-
 
 # Propensity score model --------------------------------------------------
 
@@ -86,26 +85,23 @@ CramerV(crosstable,
 ps_fit <- glm(
   formula = factor(Phone) ~ factor(hh_c05_1) + factor(hh_e06_8a),
   family = binomial(link = "logit"),
-  data = temp
+  data = hh_temp
 )
 
 summary(ps_fit)
-temp$ps <- predict(ps_fit, type = "response")
-sum(temp$ps)
-table(temp$Phone)
-
+hh_temp$ps <- predict(ps_fit, type = "response")
+sum(hh_temp$ps)
+table(hh_temp$Phone)
 
 # Class variable weighting ------------------------------------------------
 
-
-
-temp_agg <- temp %>%
+hh_temp_agg <- hh_temp %>%
   group_by (hh_c05_1, hh_e06_8a, hh_b06_4) %>%
   summarise(n = n(), 
             tt_wgt = sum(hh_wgt))
 
-temp_agg$ps <- predict(ps_fit, type = "response", newdata  = temp_agg)
-table(temp_agg$ps)
+hh_temp_agg$ps <- predict(ps_fit, type = "response", newdata  = hh_temp_agg)
+table(hh_temp_agg$ps)
 
 #####################################################################
 # propensity score model fitting, adding new variables logistic regression
