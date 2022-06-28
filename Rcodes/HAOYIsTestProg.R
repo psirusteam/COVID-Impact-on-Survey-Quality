@@ -1,17 +1,17 @@
-setwd(
-  "C:/Users/haoyi.Chen/OneDrive - United Nations/Doc/ISWGHS/New/ISWGHS/Task forces/Covid/3. Covid impact survey paper/2. Drafting/Data"
-)
+# setwd(
+#   "C:/Users/haoyi.Chen/OneDrive - United Nations/Doc/ISWGHS/New/ISWGHS/Task forces/Covid/3. Covid impact survey paper/2. Drafting/Data"
+# )
 #load packages needed
 library(dplyr, warn.conflicts = FALSE)
-install.packages("openxlsx")
+#install.packages("openxlsx")
 library(openxlsx)
-install.packages("tidyr")
+#install.packages("tidyr")
 library(tidyr)
 
 ###############################################################################################
 #Data used: Integrated Household Panel Survey
 #2010-2013-2016-2019 (Long-Term Panel, 102 EAs)
-#https://microdata.worldbank.org/index.php/catalog/3819/data-dictionary/F299?file_name=hh_mod_b_19
+#https://microdata.worldbank.org/index.php/catalog/3819/data-dictionary/F299?file_name=Data/hh_mod_b_19
 #variable label: y4_hhid: household ID id_code: individual ID within the household
 #hh_b04: relationship to head ; 1 - YES; 2 - NO
 #hh_b06_4: does [name] have a working cell phone; 1- YES; 2 - NO
@@ -27,8 +27,8 @@ library(tidyr)
 
 
 ############################### Cramer ####################################################
-HLPS_hh_roster <- read.csv('hh_mod_b_19.csv')
-HLPS_hh_edu <- read.csv("hh_mod_c_19.csv")
+HLPS_hh_roster <- read.csv('Data/hh_mod_b_19.csv')
+HLPS_hh_edu <- read.csv("Data/hh_mod_c_19.csv")
 HLPS_m1 <-
   merge(
     HLPS_hh_roster,
@@ -45,7 +45,7 @@ hh_phone <-
 head_edu <- filter(sub_m1, hh_b04 == 1)
 all <-
   merge(hh_phone, head_edu, by = "y4_hhid")
-install.packages("rcompanion")
+#install.packages("rcompanion")
 library(rcompanion)
 Input = ("
 PHone               Literate   Illiterate
@@ -58,11 +58,11 @@ matrix <- as.matrix(read.table(
   row.names = 1
 ))
 cramerV(matrix, digits = 4)
-install.packages("vcd")
+##install.packages("vcd")
 library(vcd)
 
 assocstats(matrix)
-install.packages("DescTools")
+#install.packages("DescTools")
 library(DescTools)
 
 CramerV(matrix,
@@ -73,7 +73,7 @@ CramerV(matrix,
 ################################################
 
 # load the economic characteristics data
-HLPS_hh_eco <- read.csv('hh_mod_e_19.csv')
+HLPS_hh_eco <- read.csv('Data/hh_mod_e_19.csv')
 HLPS_m2 <-
   merge(
     sub_m1,
@@ -108,7 +108,7 @@ write.xlsx(all3, "data.xlsx")
 ##############################################
 # Class variable weighting
 ##############################################
-IHPS_hh_filter <- read.csv("hh_mod_a_filt_19.csv")
+IHPS_hh_filter <- read.csv("Data/hh_mod_a_filt_19.csv")
 HLPS_m3 <-
   merge(sub_m2,
         IHPS_hh_filter,
@@ -176,7 +176,7 @@ write.xlsx(all31, "propensity.xlsx")
 # propensity score model fitting, adding new variables logistic regression
 ######################################################################
 
-HLPS_hh_support <- read.csv('hh_mod_r_19.csv')
+HLPS_hh_support <- read.csv('Data/hh_mod_r_19.csv')
 HLPS_m4 <-
   merge(
     sub_m3,
