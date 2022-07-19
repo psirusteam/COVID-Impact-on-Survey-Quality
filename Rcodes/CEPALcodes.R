@@ -1,71 +1,51 @@
-###############################################################################################
-#Data used: Integrated Household Panel Survey
-#2010-2013-2016-2019 (Long-Term Panel, 102 EAs)
-#https://microdata.worldbank.org/index.php/catalog/3819/data-dictionary/F299?file_name=hh_mod_b_19
-#variable label: y4_hhid: household ID id_code: individual ID within the household
-#hh_b04: relationship to head ; 1 - YES; 2 - NO
-#hh_b06_4: does [name] have a working cell phone; 1- YES; 2 - NO
-#hh_c05_1: can [Name] read a short text in any language]; 1 - YES; 2 - NO
-#hh_e06_8a: ... economic activity did [NAME] spent most time in the last 12 months;
-##### 1- Wage employment excluding Ganyu;
-##### 2- household business (nonag)
-##### 3- unpaid household labour (agric)
-##### 4- unpaid apprenticeship
-##### 5- Ganyu
-# hh_wgt: weight at household level
-#https://microdata.worldbank.org/index.php/catalog/3818/data-dictionary/F2?file_name=hh_mod_a_filt.dta
-#############################################################################################
-
 rm(list = ls())
 
-#load packages needed
-library(tidyverse)
-library(readr)
-library(vcd)
-library(DescTools)
-library(magrittr)
-library(PracTools)
-library(sampling)
-library(TeachingSampling)
+# Loading libraries -------------------------------------------------------
+
+library(pacman)
+p_load(
+  tidyverse,
+  readr,
+  vcd,
+  DescTools,
+  magrittr,
+  PracTools,
+  sampling,
+  TeachingSampling,
+  psych
+)
 
 # Reading data ------------------------------------------------------------
 
 # HFPS = High Frequency Phone Survey - Malawi
-# IHPS = Integrated Household Panel Survey - Malawi (the weights are here)
+# IHPS = Integrated Household Panel Survey - Malawi
 
 HFPS_hh_roster <- read.csv("Data/hh_mod_b_19.csv")
 HFPS_hh_edu <- read.csv("Data/hh_mod_c_19.csv")
 HFPS_hh_eco <- read.csv("Data/hh_mod_e_19.csv")
 IHPS_hh_filter <- read.csv("Data/hh_mod_a_filt_19.csv")
-HFPS_hh_support <- read.csv("Data/hh_mod_r_19.csv")  %>%
-  filter(hh_r0a == 111)
-
 
 # Data cleaning -----------------------------------------------------------
 
 HFPS <- HFPS_hh_roster %>%
-  mutate(Age = case_when(
-    hh_b06b <= 1959 ~ "60 +",
-    hh_b06b <= 1999 ~ "20 - 59",
-    TRUE ~ "0 - 19")) %>%
   inner_join(HFPS_hh_edu) %>%
   inner_join(HFPS_hh_eco) %>%
   inner_join(IHPS_hh_filter) %>%
-  inner_join(HFPS_hh_support) %>%
-  select(y4_hhid,
-         id_code,
-         hh_b04,
-         hh_b06_4,
-         hh_c05_1,
-         hh_e06_8a,
-         hh_wgt,
-         panelweight_2019,
-         hh_r01,
-         hh_r0a,
-         hh_b03,
-         Age) %>%
+  select(
+    y4_hhid,
+    id_code,
+    hh_b04,
+    hh_b06_4,
+    hh_c05_1,
+    hh_e06_8a,
+    hh_wgt,
+    panelweight_2019,
+    region,
+    reside,
+    hhsize
+  ) %>% 
   drop_na() %>%
-  filter(hh_e06_8a != 4)
+  filter(hh_e06_8a != 4)      # Excluding Unpaid Apprenticeship
 
 # Household head data -----------------------------------------------------
 
@@ -94,24 +74,20 @@ hh_temp <- head_hh %>%
 
 # Chi-sqrd and Cramer's-V tests -------------------------------------------
 
-
 # Phone ownership is correlated with literacy
 # From the phone subset a sample is selected in a further 2nd phase
 # The phone data conducted by phone
 crosstable1 <- table(hh_temp$Phone, hh_temp$Literacy)
-
-# Table 5 of the guidance
 crosstable1
 
-# Para 82 of the guidance
 chisq.test(crosstable1)
 CramerV(crosstable1,
         conf.level = 0.95)
 
 assocstats(crosstable1)
-# Figure 5 of the guidance
+
 crosstable2 <- table(hh_temp$Phone, hh_temp$hh_e06_8a)
-prop.table(crosstable2, margin = 2)[2,]
+prop.table(crosstable2, margin = 2)[2, ]
 
 # Propensity score model --------------------------------------------------
 
@@ -124,14 +100,71 @@ ps_fit1 <- glm(
 
 summary(ps_fit1)
 hh_temp$ps <- predict(ps_fit1, type = "response")
+
 sum(hh_temp$ps)
 table(hh_temp$Phone)
 hist(hh_temp$ps)
 summary(hh_temp$ps)
 
-#####################################################################
-# R-indicators
-######################################################################
+par(mfrow = c(3, 1))
+hist(hh_temp$ps,
+     main = "All units",
+     xlab = "Estimated PS",
+     xlim = c(0, 1))
+hist(hh_temp$ps[hh_temp$Phone == "Yes"],
+     main = "Respondents",
+     xlab = "Estimated PS",
+     xlim = c(0, 1))
+hist(hh_temp$ps[hh_temp$Phone == "No"],
+     main = "Nonrespondents",
+     xlab = "Estimated PS",
+     xlim = c(0, 1))
+dev.off()
+
+par(mfrow = c(2, 2))
+with(
+  hh_temp[hh_temp$Phone == "Yes",],
+  boxplot(
+    ps ~ factor(hh_c05_1),
+    main = "Respondents",
+    ylab = "Estimated PS",
+    xlab = "Literacy"
+  )
+)
+
+with(
+  hh_temp[hh_temp$Phone == "No",],
+  boxplot(
+    ps ~ factor(hh_c05_1),
+    main = "Nonrespondents",
+    ylab = "Estimated PS",
+    xlab = "Literacy"
+  )
+)
+
+with(
+  hh_temp[hh_temp$Phone == "Yes",],
+  boxplot(
+    ps ~ factor(hh_e06_8a),
+    main = "Respondents",
+    ylab = "Estimated PS",
+    xlab = "Employment Status"
+  )
+)
+
+with(
+  hh_temp[hh_temp$Phone == "No",],
+  boxplot(
+    ps ~ factor(hh_e06_8a),
+    main = "Nonrespondents",
+    ylab = "Estimated PS",
+    xlab = "Employment Status"
+  )
+)
+dev.off()
+
+
+# Representativity Indicators ---------------------------------------------
 
 ## At the national - level
 summary_ps_national <- hh_temp %>%
@@ -146,11 +179,11 @@ summary_ps_national <- hh_temp %>%
   )
 
 summary_ps_national
-
 sd(hh_temp$ps)
+
 N.hat <- sum(hh_temp$hh_wgt)
 rho.bar <- sum(hh_temp$ps * hh_temp$hh_wgt) / N.hat
-R.hat <- 1 - 2 * 
+R.hat <- 1 - 2 *
   sqrt((1 / (N.hat - 1)) * sum(hh_temp$hh_wgt * (hh_temp$ps - rho.bar) ^ 2))
 summary(hh_temp$ps)
 
@@ -163,9 +196,10 @@ par(mfrow = c(1, 3))
 hist(hh_temp$ps)
 hist(hh_temp$ps[hh_temp$Literacy == "Literate"])
 hist(hh_temp$ps[hh_temp$Literacy == "Illiterate"])
+dev.off()
 
 summary_ps_Literacy <- hh_temp %>%
-  group_by(Literacy) %>% 
+  group_by(Literacy) %>%
   summarise(
     n = n(),
     urp = mean(ps),
@@ -178,21 +212,20 @@ summary_ps_Literacy <- hh_temp %>%
 
 summary_ps_Literacy
 
-dev.off( )
 
 # Activity
 with(hh_temp, boxplot(ps ~ hh_e06_8a))
 hist(hh_temp$ps)
+
 par(mfrow = c(2, 2))
 hist(hh_temp$ps[hh_temp$hh_e06_8a == 1])
 hist(hh_temp$ps[hh_temp$hh_e06_8a == 2])
 hist(hh_temp$ps[hh_temp$hh_e06_8a == 3])
 hist(hh_temp$ps[hh_temp$hh_e06_8a == 5])
-
-dev.off( )
+dev.off()
 
 summary_ps_Activity <- hh_temp %>%
-  group_by(hh_e06_8a) %>% 
+  group_by(hh_e06_8a) %>%
   summarise(
     n = n(),
     urp = mean(ps),
@@ -205,12 +238,10 @@ summary_ps_Activity <- hh_temp %>%
 
 summary_ps_Activity
 
-
 # Activity and Literacy
 
-
 summary_ps_LiteracyActivity <- hh_temp %>%
-  group_by(Literacy, hh_e06_8a) %>% 
+  group_by(Literacy, hh_e06_8a) %>%
   summarise(
     n = n(),
     urp = mean(ps),
@@ -225,8 +256,6 @@ summary_ps_LiteracyActivity
 
 # Class variable weighting ------------------------------------------------
 
-# Table 11 of the guidance
-
 hh_temp_agg <- hh_temp %>%
   group_by (hh_c05_1, hh_e06_8a, hh_b06_4) %>%
   summarise(n = n(),
@@ -235,37 +264,43 @@ hh_temp_agg <- hh_temp %>%
 hh_temp_agg_resp <- hh_temp_agg %>% filter(hh_b06_4 == 1)
 hh_temp_agg_nonr <- hh_temp_agg  %>% filter(hh_b06_4 == 2)
 
-# Table 11
-
-Table11 <- data.frame(hh_temp_agg_nonr, 
-                 hh_temp_agg_resp %>% ungroup %>% 
-                   select(-hh_c05_1, -hh_e06_8a, -hh_b06_4))
+Table11 <- data.frame(
+  hh_temp_agg_nonr,
+  hh_temp_agg_resp %>% ungroup %>%
+    select(-hh_c05_1,-hh_e06_8a,-hh_b06_4)
+)
 
 sum(hh_temp_agg_resp$thh_wgt)
 sum(hh_temp_agg_nonr$thh_wgt)
 sum(hh_temp$panelweight_2019)
-# In Malawi the average household size is 4.5
-# In Malawi the population is about 19.3 million
-# That means that the total of households in Malawi 
-# should be close to 4.3 
-sum(IHPS_hh_filter$panelweight_2019)
-sum(IHPS_hh_filter$panelweight_2019 * IHPS_hh_filter$hhsize)
 
 hh_temp_agg_resp$ac <-
   (hh_temp_agg_resp$thh_wgt + hh_temp_agg_nonr$thh_wgt) / hh_temp_agg_resp$thh_wgt
 
-hh_temp_resp <-  hh_temp %>% 
-  inner_join(hh_temp_agg_resp %>% 
-               select(-n, -thh_wgt) )
+hh_temp_resp <-  hh_temp %>%
+  inner_join(hh_temp_agg_resp %>%
+               select(-n,-thh_wgt))
 
-hh_temp_resp$w0ac <- with(hh_temp_resp, panelweight_2019 * ac)
-sum(hh_temp_resp$panelweight_2019)
-sum(hh_temp_resp$w0ac)
+hh_temp_resp$wac <-
+  with(hh_temp_resp, panelweight_2019 * ac * hhsize)
+hh_temp_resp$w0 <-
+  hh_temp_resp$panelweight_2019 * hh_temp_resp$hhsize
 
-plot(hh_temp_resp$panelweight_2019, hh_temp_resp$w0ac)
+sum(hh_temp_resp$w0)
+sum(hh_temp_resp$wac)
+
+plot(
+  hh_temp_resp$w0,
+  hh_temp_resp$wac,
+  xlab = "w0",
+  ylab = "wac",
+  xlim = c(0, 200000),
+  ylim = c(0, 200000)
+)
 abline(a = 0, b = 1, col = 2)
+
 hist(hh_temp_resp$panelweight_2019)
-hist(hh_temp_resp$w0ac)
+hist(hh_temp_resp$wac)
 
 # Classes for PS ----------------------------------------------------------
 
@@ -292,114 +327,168 @@ summary_ps_5classes <- hh_temp %>%
     mps = median(ps)
   )
 
-ps_classified <- summary_ps_5classes %>% select(class, wrp)
+ps_classified <- summary_ps_5classes %>% select(-n)
 
-hh_temp_resp <- hh_temp %>% 
-  inner_join(ps_classified) %>% 
+hh_temp_resp <- hh_temp %>%
+  inner_join(ps_classified) %>%
   inner_join(hh_temp_resp)
 
 table(hh_temp$Phone)
 table(hh_temp$class)
 
-hh_temp_resp$w1ps <- with(hh_temp_resp, panelweight_2019 / wrp)
-sum(hh_temp_resp$panelweight_2019)
+hh_temp_resp$w1ps <-
+  with(hh_temp_resp, hhsize * panelweight_2019 / urp)
+hh_temp_resp$w2ps <-
+  with(hh_temp_resp, hhsize * panelweight_2019 / wrp)
+hh_temp_resp$w3ps <-
+  with(hh_temp_resp, hhsize * panelweight_2019 / urr)
+hh_temp_resp$w4ps <-
+  with(hh_temp_resp, hhsize * panelweight_2019 / wrr)
+
+sum(hh_temp_resp$w0)
 sum(hh_temp_resp$w1ps)
+sum(hh_temp_resp$w2ps)
+sum(hh_temp_resp$w3ps)
+sum(hh_temp_resp$w4ps)
 
-plot(hh_temp_resp$panelweight_2019, hh_temp_resp$w1ps)
+par(mfrow = c(2, 2))
+
+plot(
+  hh_temp_resp$wac,
+  hh_temp_resp$w1ps,
+  ylab = "w1ps",
+  xlab = "wac",
+  xlim = c(0, 200000),
+  ylim = c(0, 200000)
+)
+abline(a = 0, b = 1, col = 2)
+plot(
+  hh_temp_resp$wac,
+  hh_temp_resp$w2ps,
+  ylab = "w2ps",
+  xlab = "wac",
+  xlim = c(0, 200000),
+  ylim = c(0, 200000)
+)
+abline(a = 0, b = 1, col = 2)
+plot(
+  hh_temp_resp$wac,
+  hh_temp_resp$w3ps,
+  ylab = "w3ps",
+  xlab = "wac",
+  xlim = c(0, 200000),
+  ylim = c(0, 200000)
+)
+abline(a = 0, b = 1, col = 2)
+plot(
+  hh_temp_resp$wac,
+  hh_temp_resp$w4ps,
+  ylab = "w4ps",
+  xlab = "wac",
+  xlim = c(0, 200000),
+  ylim = c(0, 200000)
+)
 abline(a = 0, b = 1, col = 2)
 
-plot(hh_temp_resp$w0ac, hh_temp_resp$w1ps)
-abline(a = 0, b = 1, col = 2)
-
-hist(hh_temp_resp$panelweight_2019)
-hist(hh_temp_resp$w0ac)
-hist(hh_temp_resp$w1ps)
+dev.off()
 
 
-#####################################################################
-# Calibration
-#####################################################################
-# 1 Male - 2 Female
-table(HFPS$hh_b03, useNA = "a") 
-table(hh_temp_resp$hh_b03)
-# Age groups
-table(hh_temp$Age) 
-table(hh_temp_resp$Age) 
+# Calibration -------------------------------------------------------------
 
-hh_temp_resp$AgeSex <- paste(hh_temp_resp$hh_b03, hh_temp_resp$Age)
-table(hh_temp_resp$AgeSex)
+# Reside and Region
+table(HFPS$reside)
+table(hh_temp$reside)
 
-summary(hh_temp_resp$tt_wgt)
-sum(hh_temp_resp$tt_wgt)
+table(HFPS$region)
+table(hh_temp$region)
 
-x0s <- as.matrix(Domains(hh_temp_resp$AgeSex))
-tx0 <- c(4816925, 3318502, 386033,
-         4937607, 3598910, 505772) / 4.5
+table(paste(HFPS$reside, HFPS$region))
+sum(HFPS$hh_wgt)
+
+HFPS %>%
+  group_by(region) %>%
+  summarise(n = n(),
+            N = sum(hh_wgt))
+
+HFPS %>%
+  group_by(reside) %>%
+  summarise(n = n(),
+            N = sum(hh_wgt))
+
+totals <- HFPS %>%
+  group_by(reside, region) %>%
+  summarise(n = n(),
+            N = sum(hh_wgt))
+
+x0s <-
+  as.matrix(Domains(paste(
+    hh_temp_resp$reside, hh_temp_resp$region
+  )))
+tx0 <- as.matrix(totals$N)
 
 sum(tx0)
 
-g0k <- calib(x0s,
-             d = hh_temp_resp$panelweight_2019,
-             total = tx0,
-             method = "linear"
-             )
+g0k <- calib(
+  x0s,
+  d = hh_temp_resp$panelweight_2019 * hh_temp_resp$hhsize,
+  total = tx0,
+  method = "linear"
+)
 
-hh_temp_resp$w2cal <- hh_temp_resp$panelweight_2019 * g0k
-sum(hh_temp_resp$w2cal)
+hh_temp_resp$wcal <-
+  hh_temp_resp$panelweight_2019 * g0k * hh_temp_resp$hhsize
+sum(hh_temp_resp$wcal)
 
 tx0
-colSums(x0s*hh_temp_resp$panelweight_2019)
+colSums(x0s * hh_temp_resp$panelweight_2019 * hh_temp_resp$hhsize)
 
-tx0 / colSums(x0s*hh_temp_resp$panelweight_2019)
+tx0 / colSums(x0s * hh_temp_resp$panelweight_2019 * hh_temp_resp$hhsize)
 table(g0k)
 
-sum(hh_temp_resp$panelweight_2019)
-sum(hh_temp_resp$w2cal)
+sum(hh_temp_resp$wac)
+sum(hh_temp_resp$wcal)
 
-plot(hh_temp_resp$panelweight_2019, hh_temp_resp$w2cal)
+plot(hh_temp_resp$wac,
+     hh_temp_resp$wcal,
+     xlab = "wac",
+     ylab = "wcal")
 abline(a = 0, b = 1, col = 2)
-hist(hh_temp_resp$panelweight_2019)
-hist(hh_temp_resp$w2cal)
 
-summary(hh_temp_resp$panelweight_2019)
-summary(hh_temp_resp$w2cal)
 
-hh_temp_resp %>% group_by(AgeSex) %>% count()
+# PS + Calibration --------------------------------------------------------
 
-#####################################################################
-# PS + Calibration
-#####################################################################
-
-plot(hh_temp_resp$w1ps, hh_temp_resp$w2cal)
+plot(hh_temp_resp$w1ps, hh_temp_resp$wcal)
 abline(a = 0, b = 1, col = 2)
 hist(hh_temp_resp$w1ps)
-hist(hh_temp_resp$w2cal)
+hist(hh_temp_resp$wcal)
 
 g1k <- calib(x0s,
              d = hh_temp_resp$w1ps,
              total = tx0,
-             method = "linear"
-)
+             method = "linear")
 
-hh_temp_resp$w3pscal <- hh_temp_resp$w1ps * g1k
+hh_temp_resp$wpscal <- hh_temp_resp$w1ps * g1k
 
-sum(hh_temp_resp$panelweight_2019)
+sum(hh_temp_resp$w0)
 sum(hh_temp_resp$w1ps)
-sum(hh_temp_resp$w2cal)
+sum(hh_temp_resp$wcal)
+sum(hh_temp_resp$wpscal)
 
-plot(hh_temp_resp$w1ps, hh_temp_resp$w3pscal)
+plot(hh_temp_resp$w1ps,
+     hh_temp_resp$wpscal,
+     ylab = "wpscal",
+     xlab = "wps")
 abline(a = 0, b = 1, col = 2)
 hist(hh_temp_resp$w1ps)
-hist(hh_temp_resp$w3pscal)
+hist(hh_temp_resp$wpscal)
 
 summary(hh_temp_resp$w1ps)
-summary(hh_temp_resp$w3pscal)
 
-plot(hh_temp_resp$w2cal, hh_temp_resp$w3pscal)
-abline(a = 0, b = 1, col = 2)
-hist(hh_temp_resp$w2cal)
-hist(hh_temp_resp$w3pscal)
 
-summary(hh_temp_resp$w2cal)
-summary(hh_temp_resp$w3pscal)
+# Final plots -------------------------------------------------------------
 
+dataweights <- hh_temp_resp %>%
+  select(w0, wac, w1ps, wcal, wpscal)
+
+cor(dataweights)
+pairs.panels(dataweights)
